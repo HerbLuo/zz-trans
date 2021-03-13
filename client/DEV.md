@@ -46,7 +46,7 @@ password  │                 │
    ☑ cs
      ☑ common ⦿ normal ◯ hai_ke_yi ◯ professional
      ☐ java ⦿ normal ◯ hai_ke_yi ◯ professional
-     ☐ javascript ⦿ normal ◯ hai_ke_yi ◯ professional
+     ☐ javascript ⦿ normal ◯ hai_ke_yi  professional
      ☐ typescript ⦿ normal ◯ hai_ke_yi ◯ professional
      ☐ rust ⦿ normal ◯ hai_ke_yi ◯ professional
      ... 
@@ -60,9 +60,8 @@ password  │                 │
        *      *    *     *    *          *     *     *     *      *         ☑ show translate
        words i know / all words
                  ◯30%      ⦿60%     ◯70%              ◯90%
-                             ┌
-                                next group
-                                            ┘
+                             
+                               ( next group )
        
        your final score: 400
    
