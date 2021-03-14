@@ -42,46 +42,141 @@ password  │                 │
 ##### 2.其它信息录入
 ###### 界面
 ```
- step1: professional & professional words
-   ☑ cs
-     ☑ common ⦿ normal ◯ hai_ke_yi ◯ professional
-     ☐ java ⦿ normal ◯ hai_ke_yi ◯ professional
-     ☐ javascript ⦿ normal ◯ hai_ke_yi  professional
-     ☐ typescript ⦿ normal ◯ hai_ke_yi ◯ professional
-     ☐ rust ⦿ normal ◯ hai_ke_yi ◯ professional
-     ... 
- step2: generally words
-   1. firstly, choose a score that roughly represents your english level
-   ◯300 ◯ 350 ⦿ 400(≈CET4) ◯ 500 ◯ 600(≈CET6) ◯ 800
-   2. and then, there are three sets of words to fine-tune your english level
-   
-       group 1/3 
-       aboard barn carve dock injection  mayor paste quote radius vertical ↺
-       *      *    *     *    *          *     *     *     *      *         ☑ show translate
-       words i know / all words
-                 ◯30%      ⦿60%     ◯70%              ◯90%
-                             
-                               ( next group )
-       
-       your final score: 400
+  step1: professional & professional words
+    ☑ cs
+      ☑ common ⦿ normal ◯ hai_ke_yi ◯ professional
+      ☐ java ⦿ normal ◯ hai_ke_yi ◯ professional
+      ☐ javascript ⦿ normal ◯ hai_ke_yi  professional
+      ☐ typescript ⦿ normal ◯ hai_ke_yi ◯ professional
+      ☐ rust ⦿ normal ◯ hai_ke_yi ◯ professional
+      ... 
+  step2: generally words
+    1. firstly, choose a score that roughly represents your english level
+    ◯300 ◯ 350 ⦿ 400(≈CET4) ◯ 500 ◯ 600(≈CET6) ◯ 800
+    2. and then, there are three sets of words to fine-tune your english level
+    
+        group 1/3 
+        aboard barn carve dock injection  mayor paste quote radius vertical ↺
+        *      *    *     *    *          *     *     *     *      *         ☑ show translate
+        words i know / all words
+                  ◯30%      ⦿60%     ◯70%              ◯90%
+                              
+                                ( next group )
+        
+        your final score: 400
    
 ```
 ###### 流程
 ```
 2 其它信息录入
   -> 2.1 专业及专业词汇
-    -> 2.1.1 
-
+    选择几个专业类别以及对专业词汇的熟悉程度，我们将在翻译结果中优先剔除这些专业词汇。
   -> 2.2 通用词汇(未选专业词汇时，这里不能展开)
     -> 2.2.1 选择一个能大致代表你的英语水平的分数
       -> 2.2.1.1 然后，这里有三组词汇可以大致微调你的分数(20%低一级词汇, 50%当前级别词汇, 30%下一级词汇，另外过滤调所有简单和一般的专业词汇)
+        以400分为例：在350,360分段取一个词汇，370,380..430分段各取一个词汇,450到550取三个
         -> 如果选的是50%及以下
           -> 下一组直接展示翻译信息(因为语境中的单词更好理解)
         -> 否则
           -> 默认隐藏翻译
+    -> 2.2.2 你的最终分数
+      目的：1. 选60%时维持当前组的分数 2. 选90%时使用下一组的分数 
+      400-(60%-x)*(400-350)/(60%-30%), 400+(x-60%)*(500-400)/(90%-60%)
+      70%->433
+3 完毕后，执行初始化操作
 ```
 ---
-  
+
+#### 二. 数据以及接口模块(BACKGROUND)
+
+##### 初始化
+
+```
+初始化接收如下参数
+  是否执行同步 默认是
+1 未登陆 新版设计中不存在自动注册的操作，所以如果没有登陆，取消初始化
+2 已登陆 
+  -> 2.1 初始化公共信息(简单词，词频，词形，专业词汇)
+    -> 2.1.1 获取oss中的数据, 并将其存储为：WithVersionData
+  -> 2.2 初始化私有数据(用户全局设置，用户私有词汇，用户通用词汇分数，用户专业词汇分数)
+    -> 使用Api接口获取私有数据，并将其存储为：WithVersionData
+  -> 2.3 获取公共信息版本数据，触发一次所有公共数据的同步操作(Api接口获取的私有数据必然是最新的, 所以无需同步)
+  -> 2.4 使用某函数初始化用户的各网站下的设置信息 
+```
+```
+同步用户各网站下的设置信息
+-> 智能获取用户的所有配置信息（后续服务器可在用户网站配置数量大于100时，仅返回KEY信息）
+```
+
+##### 同步操作
+同步操作只能由其它代码手动触发，它们可以是 初始化模块,触发翻译时等  
+调用同步操作需要使用await等待其返回  
+如果本地数据版本过旧(针对各种类型的数据，过旧时间可能不相同)或不存在，需要等待同步完成后，返回  
+否则，允许先使用本地数据，直接返回  
+
+__todo 获取服务器版本和获取数据可以放到同一接口中
+```
+1 简单词同步(参数有：数据在服务器上的版本)
+  -> 获取本地数据的版本信息
+    -> 没有获取到(可能是各种原因导致的初始化失败)，执行不会自动同步的初始化操作并等待其完成
+      -> 成功 <--|
+      -> 失败
+        -> 同步失败
+  -> 版本过旧
+    -> <-|
+  -> 版本尚可接受
+    -> async <-| return
+  -> 从服务器或参数中获取云端版本信息
+  -> 对比
+    -> 存在新版本 
+      -> 使用同步指令同步
+2 词频，词形的同步同简单词汇
+3 用户全局设置，用户私有词汇，用户通用词汇分数，用户专业词汇分数的同步同简单词
+4 专业词汇的同步(参数有：专业ID，数据在服务器上的版本)
+  -> 获取本地数据的版本信息
+    -> 没有获取到，直接初始化该类别的专业词汇
+    -> 获取到了  
+      -> 版本过旧
+        -> <-|
+      -> 版本尚可接受
+        -> async <-| return   
+      -> 从服务器或参数中获取云端版本信息
+      -> 对比
+        -> 存在新版本 使用同步指令同步
+4 用户某网站下设置的同步(参数有：匹配规则字符串，匹配规则字符串：'reg '开头的代表url正则匹配；否则，host匹配)
+  所有网站的配置，共享一个版本信息，叫做：针对网站设置的版本
+  -> 获取本地数据的版本信息
+    -> 没有获取到(可能是各种原因导致的初始化失败)，执行不会自动同步的初始化操作并等待其完成
+    -> 获取到了
+      -> 版本过旧
+        -> <-|
+      -> 版本尚可接受
+        -> 先查找本地host匹配的数据，再查找本地'reg '匹配的数据
+          -> 找到且本地存储的数据为Symbol("no sync")标记
+            -> 使用同步指令*同步(传参为[reg]+host) 
+          -> 否则
+            -> async <----| return
+    -> 从服务器或参数中获取云端版本信息
+    -> 对比
+      -> 存在新版本 
+        -> 先查找本地host匹配的数据，再查找本地'reg '匹配的数据
+          -> 如果找到，使用同步指令*同步(传参为[reg]+host) 
+          -> 没有找到，调用某函数同步所有的各网站下的设置信息
+```
+
+---
+#### 设置界面  
+
+```
+1. 未登陆
+  嵌入注册与登陆引导界面
+2. 已登陆
+  基本复用第一版的设置界面
+
+
+切换Server之后允许重新载入插件后生效(该配置在生产环境中隐藏)
+
+```
 
 
 
