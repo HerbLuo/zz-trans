@@ -1,0 +1,10 @@
+{
+  "name": "zz-trans",
+  "version": "0.1.0",
+  "description": "智仗翻译",
+  "main": "index.js",
+  "repository": "https://github.com/HerbLuo/zz-trans",
+  "author": "herbluo",
+  "license": "MIT",
+  "private": false
+}
