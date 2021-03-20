@@ -61,7 +61,7 @@ CREATE TABLE permissions (
     update_time datetime                             not null comment '更新时间'
 );
 
-CREATE TABLE professional_word_verified (
+CREATE TABLE professional_word (
     id          bigint unsigned                      auto_increment primary key,
     category    bigint unsigned                      not null,
     word        varchar(32)                          not null,
@@ -91,14 +91,14 @@ CREATE TABLE user_pri_category (
     id          bigint unsigned                      auto_increment primary key,
     uid         bigint                               not null comment '用户id',
     category    bigint                               not null comment '分类',
-    score       double                               not null comment '',
+    score       double                               not null comment '分数',
     deleted     tinyint(1) default 0                 not null comment '是否删除',
     create_by   varchar(55)                          not null comment '创建人',
     create_time datetime   default CURRENT_TIMESTAMP not null comment '创建日期',
     update_by   varchar(55)                          null comment '更新人',
     update_time datetime                             not null comment '更新时间',
     CONSTRAINT uid UNIQUE (uid, category)
-) collate = utf8mb4_unicode_ci comment '用户专业下的词频分数';
+) collate = utf8mb4_unicode_ci comment '用户专业词汇分数';
 
 CREATE TABLE user_pri_setting (
     id          bigint unsigned                      auto_increment primary key,
