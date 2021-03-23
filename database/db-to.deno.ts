@@ -19,24 +19,53 @@ interface SyncConfig {
   tables: "*" | string[];
 }
 
+type CouldExcute = Pick<Client, "execute">;
+
+type Schema = string;
+type RowSql = string;
+type SqlGroup = Record<Schema, RowSql[]>;
+
 async function dbToSql(
-  client: Client, 
+  client: CouldExcute, 
   pipConfig?: {
     bufferSize?: number;
-    cb: (sql: string[]) => void | Promise<void>;
+    cb: (sql: SqlGroup) => void | Promise<void>;
   },
 ): Promise<string[]> {
-  
+  return await [];
 }
-async function sqlToDb(sql: string[], target: Client) {
-  
-}
-async function readSqlFiles(path: string): Promise<string[]> {
 
+async function sqlToDb(sql: SqlGroup, target: CouldExcute) {
+  
+}
+async function readSqlFiles(path: string): Promise<SqlGroup> {
+  const stat = await Deno.stat(path);
+  const readFile = async (p: string): Promise<[Schema, RowSql[]]> => {
+    const sqls = await Deno.readTextFile(p);
+    
+    return ["", sqls.split("\n")];
+  }
+  if (stat.isFile) {
+    const pair = await readFile(path);
+    return {
+      [pair[0]]: pair[1],
+    };
+  } else if (stat.isDirectory) {
+    console.log(path);
+    for await (const dirEntry of Deno.readDir(path)) {
+      if (dirEntry.isFile) {
+        readFile(dirEntry.name);
+      }
+    }
+  } 
+  return {};
 }
 async function saveSqlToDir(sqls: string[], to: string) {
   
 }
+
+const res = await readSqlFiles("sql/test.sql");
+console.log(res);
 
 // main
 const { from, to } = syncConfig;
@@ -45,8 +74,10 @@ if (typeof from === "string") {
     throw new Error("不支持sql to sql模式");
   }
   const sourceSqls = await readSqlFiles(from);
-  const targetClient = await new Client().connect(to);
-  await sqlToDb(sourceSqls, targetClient);
+  const client = await new Client().connect(to);
+  client.transaction(async conn => {
+    await sqlToDb(sourceSqls, conn);
+  });
 } else {
   const sourceClient = await new Client().connect(from);
   if (typeof to === "string") {
@@ -54,10 +85,12 @@ if (typeof from === "string") {
     await saveSqlToDir(sqls, to);
   } else {
     const targetClient = await new Client().connect(to);
-    await dbToSql(sourceClient, {
-      cb: async (sql) => {
-        await sqlToDb(sql, targetClient);
-      } 
+    targetClient.transaction(async conn => {
+      await dbToSql(sourceClient, {
+        cb: async (sql) => {
+          await sqlToDb(sql, conn);
+        },
+      });
     });
   }
 }
