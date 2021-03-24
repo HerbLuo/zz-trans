@@ -31,41 +31,109 @@ async function dbToSql(
     bufferSize?: number;
     cb: (sql: SqlGroup) => void | Promise<void>;
   },
-): Promise<string[]> {
-  return await [];
+): Promise<SqlGroup> {
+  const shouldSyncTables = syncConfig.tables === "*"
+    ? await client.execute(
+      "SELECT TABLE_NAME FROM information_schema.TABLES WHERE table_type = 'BASE TABLE' AND table_schema = DATABASE()"
+    ).then(r => r.rows?.map(r => r["TABLE_NAME"] as string) || [])
+    : syncConfig.tables;
+  const bufferSize = pipConfig?.bufferSize || 1000;  
+  const pipCb = pipConfig?.cb;
+
+  let rowSize = 0;
+  let bufferedSqlGroup: SqlGroup = {};
+  const executes: Array<Promise<void> | void> = [];
+  for (const table of shouldSyncTables) {
+    let i = 0;
+    while(true) {
+      const res = await client.execute(`SELECT * FROM ${table} LIMIT ${i*1000}, 1000`);
+      const rows = res.rows || [];
+      console.log(res.fields);
+
+      bufferedSqlGroup[table] = rows.map(row => {
+        const keys = Object.keys(row);
+        const values = Object.values(row);
+        return `INSERT INTO ${table} (${keys.join(",")}) VALUES (${values.map(v => {
+          if (typeof v === "number") {
+            return v;
+          }
+          if (typeof v === "string") {
+            return `'${v}'`;
+          }
+          console.log(v)
+          return v;
+        }).join(",")})`;
+      });
+      rowSize = rowSize + rows.length;
+
+      if (pipCb && rowSize > bufferSize) {
+        executes.push(pipCb(bufferedSqlGroup));
+        bufferedSqlGroup = {};
+      }
+
+      if (rows.length < 1000) {
+        break;
+      }
+      i++;
+    }
+  }
+  
+  if (pipCb) {
+    await Promise.all(executes);
+    await pipCb(bufferedSqlGroup);
+    return {};
+  } else {
+    return bufferedSqlGroup;
+  }
 }
 
 async function sqlToDb(sql: SqlGroup, target: CouldExcute) {
   
 }
+
+const spearator = Deno.build.os === "windows" ? "\\" : "/";
+
+const filenameNoExt = (path: string) => {
+  const name = path.split(spearator).pop()!;
+  const lastIndexOfDot = name.lastIndexOf(".");
+  return lastIndexOfDot > 0 ? name.substring(0, lastIndexOfDot) : name;
+}
+const join = (dir: string, file: string) => dir.endsWith(spearator)
+  ? dir + file
+  : dir + spearator + file;
+
 async function readSqlFiles(path: string): Promise<SqlGroup> {
   const stat = await Deno.stat(path);
-  const readFile = async (p: string): Promise<[Schema, RowSql[]]> => {
-    const sqls = await Deno.readTextFile(p);
-    
-    return ["", sqls.split("\n")];
+  const readFile = async (filepath: string): Promise<[Schema, RowSql[]]> => {
+    const sqlFilenameNoExt = filenameNoExt(filepath);
+    const sqls = await Deno.readTextFile(filepath);
+    return [sqlFilenameNoExt, sqls.split("\n")];
   }
   if (stat.isFile) {
     const pair = await readFile(path);
     return {
       [pair[0]]: pair[1],
     };
-  } else if (stat.isDirectory) {
-    console.log(path);
+  }  
+  if (stat.isDirectory) {
+    const result: SqlGroup = {};
     for await (const dirEntry of Deno.readDir(path)) {
       if (dirEntry.isFile) {
-        readFile(dirEntry.name);
+        const pair = await readFile(join(path, dirEntry.name));
+        result[pair[0]] = pair[1];
       }
     }
+    return result;
   } 
-  return {};
-}
-async function saveSqlToDir(sqls: string[], to: string) {
-  
+  throw new Error("unsupport path: " + path);
 }
 
-const res = await readSqlFiles("sql/test.sql");
-console.log(res);
+async function saveSqlToDir(sqlGroup: SqlGroup, to: string) {
+  for (const [filename, sqls] of Object.entries(sqlGroup)) {
+    const filepath = join(to, filename + ".sql");
+    await Deno.writeTextFile(filepath, sqls.join("\n"));
+  }
+}
 
 // main
 const { from, to } = syncConfig;
@@ -75,22 +143,25 @@ if (typeof from === "string") {
   }
   const sourceSqls = await readSqlFiles(from);
   const client = await new Client().connect(to);
-  client.transaction(async conn => {
+  await client.transaction(async conn => {
     await sqlToDb(sourceSqls, conn);
   });
+  await client.close();
 } else {
   const sourceClient = await new Client().connect(from);
   if (typeof to === "string") {
-    const sqls = await dbToSql(sourceClient);
-    await saveSqlToDir(sqls, to);
+    const sqlGroup = await dbToSql(sourceClient);
+    await saveSqlToDir(sqlGroup, to);
   } else {
     const targetClient = await new Client().connect(to);
-    targetClient.transaction(async conn => {
+    await targetClient.transaction(async conn => {
       await dbToSql(sourceClient, {
         cb: async (sql) => {
           await sqlToDb(sql, conn);
         },
       });
     });
+    await targetClient.close();
   }
+  await sourceClient.close();
 }
